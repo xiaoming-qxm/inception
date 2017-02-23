@@ -44,33 +44,3 @@ def conv2d_bn(x, nb_filter, nb_row, nb_col,
         x = Activation(activation)(x)
 
     return x
-
-
-def fc(x, num_output, activation=None, name=None,
-        weight_decay=0, batch_norm=None):
-    """ Add a fully connected layer followed by an optional batch_norm layer
-    """
-    if name is not None:
-        fc_name = 'fc_' + name
-        bn_name = 'bn_' + name
-    else:
-        fc_name = None
-        bn_name = None
-
-    if K.image_dim_ordering() == 'th':
-        bn_axis = 1
-    else:
-        bn_axis = 3
-
-    if weight_decay and weight_decay > 0:
-        x = Dense(num_output, W_regularizer=l2(weight_decay), name=fc_name)(x)
-    else:
-        x = Dense(num_output, name=fc_name)(x)
-
-    if batch_norm:
-        x = BatchNormalization(axis=bn_axis, name=bn_name)(x)
-
-    if activation:
-        x = Activation(activation)(x)
-
-    return x

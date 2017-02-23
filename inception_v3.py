@@ -23,7 +23,7 @@ from keras.layers.pooling import GlobalAveragePooling2D
 def InceptionV3(include_top=True, weights='imagenet',
                 input_tensor=None, input_shape=None,
                 weight_decay=0.00004, num_classes=1000,
-                dropout_prob=0.):
+                dropout_prob=0., aux_include=True):
     """Inception v3 architecture
        Note that the default image size for this model is 299x299
     """
@@ -201,20 +201,29 @@ def InceptionV3(include_top=True, weights='imagenet',
               mode='concat', concat_axis=channel_axis,
               name='mixed_7')
 
-    # Auxiliary Head logits
-    aux_logits = AveragePooling2D(
-        (5, 5), strides=(3, 3), border_mode='valid')(x)
-    aux_logits = conv2d_bn(aux_logits, 128, 1, 1, weight_decay=weight_decay)
+    if aux_include:
+        # Auxiliary Head logits
+        aux_classifier = AveragePooling2D(
+            (5, 5), strides=(3, 3), border_mode='valid')(x)
+        aux_classifier = conv2d_bn(
+            aux_classifier, 128, 1, 1, weight_decay=weight_decay)
 
-    # Shape of feature map before the final layer
-    # shape = aux_logits.output_shape
-    aux_logits = conv2d_bn(
-        aux_logits, 768, 5, 5,
-        border_mode='valid', weight_decay=weight_decay)
-    aux_logits = Flatten()(aux_logits)
-    aux_logits = fc(aux_logits, num_classes,
-                    activation=None, name='aux',
-                    weight_decay=weight_decay)
+        # Shape of feature map before the final layer
+        # shape = aux_classifier.output_shape
+        aux_classifier = conv2d_bn(aux_classifier, 768, 5, 5,
+                                   border_mode='valid',
+                                   weight_decay=weight_decay)
+
+        aux_classifier = Flatten()(aux_classifier)
+
+        if weight_decay and weight_decay > 0:
+            aux_classifier = Dense(num_classes, activation='softmax',
+                                   W_regularizer=l2(weight_decay),
+                                   name='aux_classifier')(aux_classifier)
+        else:
+            aux_classifier = Dense(
+                num_classes, activation='softmax',
+                name='aux_classifier')(aux_classifier)
 
     # mixed 8: 8 x 8 x 1280.
     branch3x3 = conv2d_bn(x, 192, 1, 1, weight_decay=weight_decay)
@@ -276,20 +285,27 @@ def InceptionV3(include_top=True, weights='imagenet',
     x = GlobalAveragePooling2D()(x)
     x = Dropout(dropout_prob)(x)
 
-    # 512
-    logits = fc(x, num_classes, activation=None,
-                name='logits', weight_decay=weight_decay)
-
-    # num_classes
-    predictions = fc(x, num_classes, activation='softmax',
-                     name='predictions', weight_decay=weight_decay)
+    # 1024
+    if weight_decay and weight_decay > 0:
+        predictions = Dense(num_classes,
+                            activation='softmax',
+                            W_regularizer=l2(weight_decay),
+                            name='predictions')(x)
+    else:
+        predictions = Dense(num_classes,
+                            activation='softmax',
+                            name='predictions')(x)
 
     if input_tensor is not None:
         inputs = get_source_inputs(input_tensor)
     else:
         inputs = img_input
 
-    model = Model(inputs, predictions, name='inception_v3')
-    aux_model = Model(inputs, aux_logits, name='aux_classifier')
+    if aux_include:
+        model = Model(
+            inputs, [predictions, aux_classifier],
+            name='inception_v3_with_aux')
+    else:
+        model = Model(inputs, predictions, name='inception_v3')
 
-    return model, aux_model
+    return model
